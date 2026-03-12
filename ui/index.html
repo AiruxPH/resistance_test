@@ -3,84 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resistance Test | Security Hardening Dashboard</title>
+    <title>Resistance Test | Security Command Center</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div class="status-bar">
+        <div class="system-node">
+            <div class="led blink"></div>
+            <span>System Status: <span style="color: var(--success);">Nominal</span></span>
+        </div>
+        <div class="system-node">
+            <span>Access Mode: <span style="color: var(--accent-color);">Forensic Auditor</span></span>
+        </div>
+        <div class="system-node">
+            <span>Uptime: <span id="uptime-clock">00:00:00</span></span>
+        </div>
+    </div>
+
     <div class="container">
         <header>
             <h1>Resistance Test</h1>
-            <p class="subtitle">Security Hardening & Bypass Prevention Analysis</p>
+            <p class="subtitle">DEVOPS_VULN_AUDITOR / VERSION_1.0.0</p>
         </header>
 
         <main class="main-grid">
             <div class="left-panel">
                 <section class="panel">
-                    <h2 class="panel-title">Target Configuration</h2>
+                    <h2 class="panel-title">Target Vector</h2>
                     <div class="input-group">
-                        <label for="target-url">Target URL</label>
+                        <label for="target-url">Network Hostname / URL</label>
                         <input type="text" id="target-url" placeholder="https://example.com" value="http://localhost:5000">
                     </div>
                     
-                    <h2 class="panel-title">Vulnerability Modules</h2>
+                    <h2 class="panel-title">Control Modules</h2>
                     <div class="modules-list" id="modules-list">
                         <div class="module-item">
                             <input type="checkbox" id="m-a03" checked>
-                            <label for="m-a03">A03: Injection (SQLi/XSS)</label>
+                            <label for="m-a03">MOD_A03: Injection Probes</label>
                         </div>
                         <div class="module-item">
                             <input type="checkbox" id="m-a05" checked>
-                            <label for="m-a05">A05: Security Misconfiguration</label>
+                            <label for="m-a05">MOD_A05: Def-Config Audit</label>
                         </div>
                         <div class="module-item">
                             <input type="checkbox" id="m-a10" checked>
-                            <label for="m-a10">A10: SSRF Probe</label>
+                            <label for="m-a10">MOD_A10: SSRF Probe</label>
                         </div>
                         <div class="module-item">
                             <input type="checkbox" id="m-a02" checked>
-                            <label for="m-a02">A02: Cryptographic Failure (TLS)</label>
+                            <label for="m-a02">MOD_A02: CRYPT_Fails</label>
                         </div>
                         <div class="module-item">
                             <input type="checkbox" id="m-a07" checked>
-                            <label for="m-a07">A07: Brute Force Resistance</label>
+                            <label for="m-a07">MOD_A07: Rate-Limit Test</label>
                         </div>
                         <div class="module-item">
                             <input type="checkbox" id="m-db" checked>
-                            <label for="m-db">DB: Database Hardening Check</label>
+                            <label for="m-db">MOD_DB: Hardening Audit</label>
                         </div>
                         <div class="module-item" style="border-color: var(--danger); margin-top: 0.5rem;">
                             <input type="checkbox" id="m-aggressive">
-                            <label for="m-aggressive" style="color: var(--danger); font-weight: bold;">Enable Aggressive Testing (High Risk)</label>
+                            <label for="m-aggressive" style="color: var(--danger); font-weight: bold;">AGGR_MODE (High Risk)</label>
                         </div>
                     </div>
 
                     <div style="margin-top: 2rem;">
-                        <button id="run-btn" class="btn">INITIALIZE TEST</button>
+                        <button id="run-btn" class="btn">Execute Probe Sequence</button>
+                    </div>
+                </section>
+
+                <section class="panel" style="margin-top: 1.5rem;">
+                    <h2 class="panel-title">Decoy Generators</h2>
+                    <div style="display: grid; gap: 0.5rem;">
+                        <button class="btn trap-btn" onclick="generateTrap('env')" style="font-size: 0.7rem;">GEN_ENV_DECOY</button>
+                        <button class="btn trap-btn" onclick="generateTrap('db')" style="font-size: 0.7rem;">GEN_SQL_CONFIG</button>
+                        <button class="btn trap-btn" onclick="generateTrap('txt')" style="font-size: 0.7rem;">GEN_ROOT_KEYS</button>
                     </div>
                 </section>
             </div>
 
-            <div class="right-panel">
-                <section class="panel" style="height: auto; margin-bottom: 2rem;">
-                    <h2 class="panel-title">Forensic Traps (Honey-Tokens)</h2>
-                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
-                        Generate decoy files to catch hackers snooping on your server.
-                    </p>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
-                        <button class="btn trap-btn" onclick="generateTrap('env')">ENV DECOY</button>
-                        <button class="btn trap-btn" onclick="generateTrap('db')">DB CONFIG</button>
-                        <button class="btn trap-btn" onclick="generateTrap('txt')">PASSWORDS.TXT</button>
-                    </div>
-                </section>
-
-                <section class="panel" style="height: calc(100% - 220px);">
-                    <h2 class="panel-title">Test Results & Live Console</h2>
+            <div class="console-wrapper">
+                <section class="panel" style="flex: 1;">
+                    <h2 class="panel-title">Forensic Stream / Live Feed</h2>
                     <div id="console" class="console">
-                        <div class="line">Ready to initialize security resistance test...</div>
+                        <div class="line">SYSTEM_IDLE: Awaiting instruction sequence...</div>
                     </div>
-                    <div id="hardening-score" style="margin-top: 1.5rem; text-align: center;">
-                        <div style="font-size: 0.9rem; color: var(--text-secondary);">Hardening Score</div>
-                        <div id="score-value" style="font-size: 2.5rem; font-weight: 800; color: var(--accent-color);">--</div>
+                    
+                    <div class="score-panel">
+                        <div class="score-metric">
+                            <div class="label">Audited Score</div>
+                            <div id="score-value" class="value">--</div>
+                        </div>
+                        <div class="score-metric">
+                            <div class="label">Status Code</div>
+                            <div id="status-display" class="value" style="font-size: 1.5rem; color: var(--success);">200 OK</div>
+                        </div>
                     </div>
                 </section>
             </div>
@@ -88,12 +105,15 @@
     </div>
 
     <footer>
-        <div style="max-width: 800px; margin: 0 auto; line-height: 1.4;">
-            <p><strong>&copy; 2026 Resistance Test Engine.</strong> Guided by /global-prevention-strategy.</p>
-            <p style="margin-top: 5px; color: var(--danger); font-size: 0.75rem;">
-                <strong>WARNING:</strong> This tool is for authorized security testing only. Use against unintended targets is strictly prohibited. 
-                IP-protection is enabled, but ethical use is your responsibility.
-            </p>
+        <div class="footer-content">
+            <div class="legal">
+                <p><strong>LEGAL_NOTICE:</strong> This instrument is for AUTHORIZED testing only. Guided by /global-prevention-strategy.</p>
+                <p style="margin-top: 5px; color: var(--danger);">WARNING: Unauthorized use against production assets is strictly prohibited.</p>
+            </div>
+            <div style="text-align: right; font-size: 0.6rem; color: var(--text-secondary);">
+                ENGINE::RESISTANCE_V1 <br>
+                BUILD::2026.03.13
+            </div>
         </div>
     </footer>
 

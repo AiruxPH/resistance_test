@@ -1,77 +1,125 @@
-/**
- * Resistance Test Dashboard Logic
- * Handles UI events and communicates with the Python backend.
- */
+document.getElementById('run-btn').addEventListener('click', runTest);
 
-document.getElementById('run-btn').addEventListener('click', async () => {
+// Uptime Clock Logic
+let startTime = Date.now();
+setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    const hours = Math.floor(elapsed / 3600000).toString().padStart(2, '0');
+    const minutes = Math.floor((elapsed % 3600000) / 60000).toString().padStart(2, '0');
+    const seconds = Math.floor((elapsed % 60000) / 1000).toString().padStart(2, '0');
+    document.getElementById('uptime-clock').innerText = `${hours}:${minutes}:${seconds}`;
+}, 1000);
+
+function logToConsole(message, type = 'info', prefix = 'SCANNER') {
+    const consoleBox = document.getElementById('console');
+    const line = document.createElement('div');
+    line.className = `line ${type}`;
+    
+    const timestamp = new Date().toLocaleTimeString([], { hour12: false });
+    line.innerHTML = `<span class="timestamp">[${timestamp}]</span><span class="prefix">${prefix}::</span>${message}`;
+    
+    consoleBox.appendChild(line);
+    consoleBox.scrollTop = consoleBox.scrollHeight;
+    
+    // Add "active" pulse to current line
+    const lines = consoleBox.getElementsByClassName('line');
+    for (let l of lines) l.classList.remove('active');
+    line.classList.add('active');
+}
+
+async function runTest() {
     const targetUrl = document.getElementById('target-url').value;
-    const consoleEl = document.getElementById('console');
-    const runBtn = document.getElementById('run-btn');
-
+    const consoleBox = document.getElementById('console');
+    const scoreVal = document.getElementById('score-value');
+    const statusDisp = document.getElementById('status-display');
+    
     if (!targetUrl) {
-        logToConsole("Error: Target URL is required.", "error");
+        logToConsole("ERROR: Targeting vector undefined.", "error", "SYSTEM");
         return;
     }
 
     // Reset UI
-    consoleEl.innerHTML = "";
-    runBtn.disabled = true;
-    runBtn.innerText = "TESTING...";
-    document.getElementById('score-value').innerText = "--";
+    consoleBox.innerHTML = '';
+    scoreVal.innerText = "--";
+    scoreVal.style.color = "var(--accent-color)";
+    statusDisp.innerText = "PROBING...";
+    statusDisp.style.color = "var(--warning)";
 
     const isAggressive = document.getElementById('m-aggressive').checked;
-    
-    // Dynamic host detection
     const baseUrl = window.location.origin;
 
-    logToConsole(`Initializing Security Resistance Test via Backend for: ${targetUrl}`, "info");
+    logToConsole(`Initializing probe sequence for host: ${targetUrl}`, "info", "SYSTEM");
     if (isAggressive) {
-        logToConsole("WARNING: Aggressive Mode Enabled. Safety throttles reduced.", "warning");
+        logToConsole("WARNING: AGGRESSIVE_MODE active. Stability risk detected.", "warning", "SYSTEM");
     }
-    
+
+    // --- Lively Console Logic ---
+    let probeActive = true;
+    const livelyMessages = [
+        "Analyzing network handshake...",
+        "Probing TLS cipher suites...",
+        "Identifying endpoint architecture...",
+        "Scanning for exposed metadata...",
+        "Testing rate-limit resilience...",
+        "Injecting baseline payloads...",
+        "Monitoring server heartbeat...",
+        "Verifying database path security..."
+    ];
+
+    let msgIndex = 0;
+    const livelyInterval = setInterval(() => {
+        if (!probeActive) return;
+        logToConsole(livelyMessages[msgIndex % livelyMessages.length], "info", "PROBE");
+        msgIndex++;
+    }, 2000);
+
     try {
         const response = await fetch(`${baseUrl}/test`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ 
-                url: targetUrl,
-                aggressive: isAggressive
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: targetUrl, aggressive: isAggressive })
         });
 
-        if (!response.ok) {
-            throw new Error(`Server returned ${response.status}`);
-        }
+        probeActive = false;
+        clearInterval(livelyInterval);
 
-        const data = await response.json();
+        const result = await response.json();
         
-        // Display logs from the Python engine
-        if (data.logs) {
-            data.logs.forEach(log => {
-                const statusType = log.status.toLowerCase();
-                logToConsole(`${log.module}: ${log.message}`, statusType);
-            });
+        if (result.error) {
+            logToConsole(`SEQ_FAIL: ${result.error}`, "error", "SYSTEM");
+            statusDisp.innerText = "FAIL";
+            statusDisp.style.color = "var(--danger)";
+            return;
         }
 
-        document.getElementById('score-value').innerText = data.score || "0%";
-        logToConsole("Test Sequence Completed.", "success");
+        // Output real logs
+        result.logs.forEach(log => {
+            logToConsole(log.message, log.level.toLowerCase(), log.module);
+        });
 
-    } catch (error) {
-        logToConsole(`Backend Error: ${error.message}`, "error");
-        logToConsole("Make sure server.py is running on http://127.0.0.1:5000", "warning");
-    } finally {
-        runBtn.disabled = false;
-        runBtn.innerText = "INITIALIZE TEST";
+        // Finalize score
+        scoreVal.innerText = result.score;
+        const scoreInt = parseInt(result.score);
+        if (scoreInt < 40) scoreVal.style.color = "var(--danger)";
+        else if (scoreInt < 70) scoreVal.style.color = "var(--warning)";
+        else scoreVal.style.color = "var(--success)";
+
+        statusDisp.innerText = "200 OK";
+        statusDisp.style.color = "var(--success)";
+        logToConsole("Probe sequence complete. Analysis report generated.", "success", "SYSTEM");
+
+    } catch (err) {
+        probeActive = false;
+        clearInterval(livelyInterval);
+        logToConsole(`FATAL: Connection to backend lost. ${err.message}`, "error", "SYSTEM");
+        statusDisp.innerText = "OFFLINE";
+        statusDisp.style.color = "var(--danger)";
     }
-});
+}
 
 async function generateTrap(type) {
-    logToConsole(`Generating Forensic Trap: ${type.toUpperCase()}...`, "info");
-    
-    // Dynamic host detection
     const baseUrl = window.location.origin;
+    logToConsole(`Initializing decoy generation: ${type.toUpperCase()}`, "info", "GEN");
     
     try {
         const response = await fetch(`${baseUrl}/generate-trap`, {
@@ -80,49 +128,14 @@ async function generateTrap(type) {
             body: JSON.stringify({ type: type })
         });
 
-        if (!response.ok) throw new Error("Server Error");
-
-        const data = await response.json();
-        
-        logToConsole(`SUCCESS: Generated ${data.filename}`, "success");
-        logToConsole("--- START OF CONTENT ---", "info");
-        
-        // Log content line by line for readability
-        data.content.split('\n').forEach(line => {
-            if (line.trim()) logToConsole(line, "warning");
-        });
-        
-        logToConsole("--- END OF CONTENT ---", "info");
-        logToConsole(`Place this file as '${data.filename}' in a sensitive directory to catch unauthorized snooper.`, "success");
-
-    } catch (error) {
-        logToConsole(`Generation Error: ${error.message}`, "error");
+        const result = await response.json();
+        if (result.error) {
+            logToConsole(`GEN_ERR: ${result.error}`, "error", "GEN");
+        } else {
+            logToConsole(`DECOY_READY: Copying payload to log stream...`, "success", "GEN");
+            logToConsole(`\nFILE: ${result.filename}\nCONTENT:\n${result.content}`, "info", "PAYLOAD");
+        }
+    } catch (err) {
+        logToConsole(`GEN_FATAL: ${err.message}`, "error", "GEN");
     }
-}
-
-function logToConsole(message, type = "") {
-    const consoleEl = document.getElementById('console');
-    const line = document.createElement('div');
-    line.className = `line ${type}`;
-    
-    const timestamp = new Date().toLocaleTimeString();
-    line.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
-    
-    consoleEl.appendChild(line);
-    consoleEl.scrollTop = consoleEl.scrollHeight;
-}
-
-async function simulateTestStep(id, message) {
-    logToConsole(message, "info");
-    return new Promise(resolve => {
-        setTimeout(() => {
-            const success = Math.random() > 0.2;
-            if (success) {
-                logToConsole(`Module ${id}: Passed.`, "success");
-            } else {
-                logToConsole(`Module ${id}: Potential vulnerability detected!`, "warning");
-            }
-            resolve();
-        }, 800);
-    });
 }
