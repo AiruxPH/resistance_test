@@ -10,11 +10,11 @@ class ResistanceTester:
         self.score = 100
         self.aggressive = aggressive
 
-    def log(self, module, status, message):
+    def log(self, module, level, message):
         entry = {
             "timestamp": time.strftime("%H:%M:%S"),
             "module": module,
-            "status": status,
+            "level": level,
             "message": message
         }
         self.results.append(entry)

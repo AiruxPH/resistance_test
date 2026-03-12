@@ -57,7 +57,12 @@ All notable changes to this project will be documented in this file.
 - **start.bat (Windows Bootstrap):** Added a batch script that checks for Python/Pip and provides friendly guidance if they are missing.
 - **Enhanced Launcher:** Updated `run.py` to handle the new directory structure and provide a smoother setup flow.
 
+### Fixed
+- **Console Crash:** Resolved an issue where the frontend would crash with a `toLowerCase` error due to a field name mismatch (`status` vs `level`) between the Python engine and JavaScript.
+- **Defensive Logging:** Added fallback mechanisms in `app.js` to handle malformed log entries without interrupting the test sequence.
+
 ## [2026-03-12] - Final Polish & Legal Compliance
+
 
 ### Changed
 - **README.md Refinement:** Added detailed legal disclaimers, ethical use guidelines, and multi-OS installation instructions.

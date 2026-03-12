@@ -94,7 +94,8 @@ async function runTest() {
 
         // Output real logs
         result.logs.forEach(log => {
-            logToConsole(log.message, log.level.toLowerCase(), log.module);
+            const level = (log.level || log.status || 'info').toLowerCase();
+            logToConsole(log.message, level, log.module);
         });
 
         // Finalize score
