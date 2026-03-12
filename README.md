@@ -60,6 +60,23 @@ Built on the **Global Prevention Strategy**, this suite provides a "one-click" f
 
 ---
 
+## 🕵️ Advanced Strategy: Forensic Decoys (Honey-Tokens)
+
+The **Forensic Trap** module doesn't just scan for bugs—it sets an active "Digital Tripwire" for hackers.
+
+### 1. The Strategy
+A Decoy file is a piece of "Bait" that looks like a sensitive credential but is actually fake. Normal users will never look for these files, but a hacker using automated tools or manual snooping will find them immediately.
+
+### 2. How to Deploy
+1. **Generate:** Use the buttons on the dashboard to generate `.env`, `SQL Config`, or `Root Keys`.
+2. **Setup:** Create a file with the corresponding name (e.g., `.env`) in your server's root directory.
+3. **Bait:** Paste the generated fake content into that file.
+
+### 3. Catching the Attacker
+If anyone accesses these files, you know **100%** that your server is being snooped on. You can use server-level tools (like `Auditd` on Linux) to notify you the instant these files are opened, giving you an early warning before they find your real data.
+
+---
+
 ## 📜 Principles followed
 1. **Deny by Default:** Total access control logic.
 2. **Data vs Logic:** Treating user input as "Dumb Strings."
