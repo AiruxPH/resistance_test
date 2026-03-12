@@ -86,59 +86,81 @@ class ResistanceTester:
         self.log("A10", "SUCCESS", "No immediate SSRF vectors identified in top-level crawl.")
 
     def check_a07_brute_force(self):
-        self.log("A07", "PROBING", "Testing Brute Force Resistance & Rate Limiting...")
+        self.log("A07", "PROBING", "Discovering Authentication Vectors...")
+        
+        # 1. Discover the real login endpoint
+        common_paths = ["/login", "/admin", "/wp-login.php", "/user/login", "/auth"]
+        active_endpoint = None
+        
+        for path in common_paths:
+            try:
+                test_url = self.target_url + path
+                r = requests.get(test_url, timeout=5)
+                # If it's not a 404, it's a potential target (200, 401, 403, etc.)
+                if r.status_code != 404:
+                    active_endpoint = test_url
+                    self.log("A07", "INFO", f"Active authentication vector identified: {path}")
+                    break
+            except:
+                continue
+
+        if not active_endpoint:
+            self.log("A07", "SUCCESS", "No common authentication interfaces detected. Brute-force risk is localized.")
+            return
+
+        self.log("A07", "PROBING", f"Testing Rate Limiting on {active_endpoint}...")
         
         # Determine number of attempts based on mode
         attempts = 20 if self.aggressive else 5
-        endpoint = f"{self.target_url}/login" # Common target
-        
-        self.log("A07", "INFO", f"Running {attempts} rapid probes against {endpoint}")
-        
         success_count = 0
         killed = False
 
         for i in range(attempts):
             try:
-                # Small delay to prevent immediate OS-level socket exhaustion, but fast enough to test rate-limiting
                 time.sleep(0.1 if self.aggressive else 0.5)
+                response = requests.get(active_endpoint, timeout=3)
                 
-                response = requests.get(endpoint, timeout=3)
-                
-                # SAFETY KILL-SWITCH
                 if response.status_code == 429:
-                    self.log("A07", "SUCCESS", "Rate limiting (429) detected! The server is protecting itself.")
+                    self.log("A07", "SUCCESS", "Rate limiting (429) detected! Protection is ACTIVE.")
                     killed = True
                     break
                 elif response.status_code == 403:
-                    self.log("A07", "SUCCESS", "IP Banning/WAF (403) detected! Access was blocked.")
+                    self.log("A07", "SUCCESS", "Security Barrier (403) detected! IP Banning is ACTIVE.")
                     killed = True
                     break
                 
                 success_count += 1
             except Exception as e:
-                self.log("A07", "INFO", f"Probe {i+1} failed: {str(e)}")
+                self.log("A07", "INFO", f"Probe {i+1} interrupted: {str(e)}")
                 break
 
         if not killed:
             if success_count >= attempts:
                 self.score -= 20
-                self.log("A07", "WARNING", f"No rate limiting detected after {attempts} attempts. Auth system might be vulnerable.")
+                self.log("A07", "WARNING", f"No rate limiting detected after {attempts} attempts. System is wide open.")
             else:
-                self.log("A07", "INFO", f"Test finished after {success_count} successful probes without triggers.")
+                self.log("A07", "INFO", f"Test concluded after {success_count} probes. Performance threshold normal.")
 
     def check_db_hardening(self):
-        self.log("DB-HARD", "PROBING", "Analyzing Database Hardening (Rule #5/8)...")
+        self.log("DB-HARD", "PROBING", "Scanning for Exposed Database Assets (Rule #5)...")
         
-        # 1. Check for exposed /database folder (Rule #5)
-        try:
-            r = requests.get(f"{self.target_url}/database/", timeout=3)
-            if r.status_code == 200:
-                self.score -= 15
-                self.log("DB-HARD", "DANGER", "Rule #5 Violation: Public '/database/' folder detected!")
-            else:
-                self.log("DB-HARD", "SUCCESS", "No public '/database/' folder exposed.")
-        except:
-            pass
+        # Expand check to common folder names (Rule #5)
+        paths = ["/database/", "/db/", "/sql/", "/backups/"]
+        found = []
+        
+        for p in paths:
+            try:
+                r = requests.get(self.target_url + p, timeout=3)
+                if r.status_code == 200:
+                    found.append(p)
+            except:
+                pass
+
+        if found:
+            self.score -= 15
+            self.log("DB-HARD", "DANGER", f"Rule #5 Violation: Exposed folders: {', '.join(found)}")
+        else:
+            self.log("DB-HARD", "SUCCESS", "Safe: No common database directories exposed via web.")
 
         # 2. Check for remote SQL connection security (Rule #8)
         # We simulate a check for open ports or basic connection security if a hostname looks like a DB server
