@@ -294,8 +294,6 @@ input[type="text"]:focus {
     display: flex;
     flex-direction: column;
     gap: 0.8rem;
-    max-height: 200px;
-    overflow-y: auto;
     padding-right: 5px;
 }
 
