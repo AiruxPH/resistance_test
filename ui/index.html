@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resistance Test | Security Hardening Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Resistance Test</h1>
+            <p class="subtitle">Security Hardening & Bypass Prevention Analysis</p>
+        </header>
+
+        <main class="main-grid">
+            <div class="left-panel">
+                <section class="panel">
+                    <h2 class="panel-title">Target Configuration</h2>
+                    <div class="input-group">
+                        <label for="target-url">Target URL</label>
+                        <input type="text" id="target-url" placeholder="https://example.com" value="http://localhost:5000">
+                    </div>
+                    
+                    <h2 class="panel-title">Vulnerability Modules</h2>
+                    <div class="modules-list" id="modules-list">
+                        <div class="module-item">
+                            <input type="checkbox" id="m-a03" checked>
+                            <label for="m-a03">A03: Injection (SQLi/XSS)</label>
+                        </div>
+                        <div class="module-item">
+                            <input type="checkbox" id="m-a05" checked>
+                            <label for="m-a05">A05: Security Misconfiguration</label>
+                        </div>
+                        <div class="module-item">
+                            <input type="checkbox" id="m-a10" checked>
+                            <label for="m-a10">A10: SSRF Probe</label>
+                        </div>
+                        <div class="module-item">
+                            <input type="checkbox" id="m-a02" checked>
+                            <label for="m-a02">A02: Cryptographic Failure (TLS)</label>
+                        </div>
+                        <div class="module-item">
+                            <input type="checkbox" id="m-a07" checked>
+                            <label for="m-a07">A07: Brute Force Resistance</label>
+                        </div>
+                        <div class="module-item">
+                            <input type="checkbox" id="m-db" checked>
+                            <label for="m-db">DB: Database Hardening Check</label>
+                        </div>
+                        <div class="module-item" style="border-color: var(--danger); margin-top: 0.5rem;">
+                            <input type="checkbox" id="m-aggressive">
+                            <label for="m-aggressive" style="color: var(--danger); font-weight: bold;">Enable Aggressive Testing (High Risk)</label>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 2rem;">
+                        <button id="run-btn" class="btn">INITIALIZE TEST</button>
+                    </div>
+                </section>
+            </div>
+
+            <div class="right-panel">
+                <section class="panel" style="height: auto; margin-bottom: 2rem;">
+                    <h2 class="panel-title">Forensic Traps (Honey-Tokens)</h2>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                        Generate decoy files to catch hackers snooping on your server.
+                    </p>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                        <button class="btn trap-btn" onclick="generateTrap('env')">ENV DECOY</button>
+                        <button class="btn trap-btn" onclick="generateTrap('db')">DB CONFIG</button>
+                        <button class="btn trap-btn" onclick="generateTrap('txt')">PASSWORDS.TXT</button>
+                    </div>
+                </section>
+
+                <section class="panel" style="height: calc(100% - 220px);">
+                    <h2 class="panel-title">Test Results & Live Console</h2>
+                    <div id="console" class="console">
+                        <div class="line">Ready to initialize security resistance test...</div>
+                    </div>
+                    <div id="hardening-score" style="margin-top: 1.5rem; text-align: center;">
+                        <div style="font-size: 0.9rem; color: var(--text-secondary);">Hardening Score</div>
+                        <div id="score-value" style="font-size: 2.5rem; font-weight: 800; color: var(--accent-color);">--</div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <footer>
+        <div style="max-width: 800px; margin: 0 auto; line-height: 1.4;">
+            <p><strong>&copy; 2026 Resistance Test Engine.</strong> Guided by /global-prevention-strategy.</p>
+            <p style="margin-top: 5px; color: var(--danger); font-size: 0.75rem;">
+                <strong>WARNING:</strong> This tool is for authorized security testing only. Use against unintended targets is strictly prohibited. 
+                IP-protection is enabled, but ethical use is your responsibility.
+            </p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
