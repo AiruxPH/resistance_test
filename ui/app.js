@@ -12,6 +12,9 @@ setInterval(() => {
 
 // Threat Translator logic
 const threatMap = {
+    "A01": {
+        "WARNING": { title: "Unprotected Admin/API", desc: "Sensitive folders like /admin or /api are open to the public without a password." }
+    },
     "A02": {
         "WARNING": { title: "Insecure Connection", desc: "This site doesn't use HTTPS. Any info you enter can be stolen by anyone on the same network." }
     },
@@ -21,8 +24,20 @@ const threatMap = {
     "A05": {
         "DANGER": { title: "Exposed Secret Files", desc: "Critical system files (like .env) are public. Your database passwords and API keys are visible to the world." }
     },
+    "A06": {
+        "WARNING": { title: "Software Version Leak", desc: "Your server is telling the world exactly which software version it uses, making it easier for hackers to find targeted exploits." }
+    },
     "A07": {
         "WARNING": { title: "Weak Rate Limiting", desc: "A hacker can try thousands of passwords a second without being blocked. Accounts are at high risk." }
+    },
+    "A08": {
+        "WARNING": { title: "Exposed Deployment Data", desc: "Build files or CI/CD metadata are public. This gives hackers a map of your internal infrastructure." }
+    },
+    "A09": {
+        "DANGER": { title: "Public System Logs", desc: "Your server's activity logs are public. These logs often contain usernames, user paths, and technical errors that help hackers." }
+    },
+    "A10": {
+        "WARNING": { title: "SSRF Vector", desc: "Potential for Server-Side Request Forgery detected. This could allow hackers to browse your internal network." }
     },
     "DB-HARD": {
         "DANGER": { title: "Public Database Folder", desc: "Your 'database' folder is visible. Hackers can download your raw data directly." },

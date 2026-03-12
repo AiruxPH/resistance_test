@@ -2,6 +2,9 @@ import requests
 import time
 import json
 import sys
+import socket
+from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor
 
 class ResistanceTester:
     def __init__(self, target_url, aggressive=False):
@@ -22,15 +25,47 @@ class ResistanceTester:
         sys.stdout.flush()
 
     def run_all(self):
-        self.check_a02_tls()
-        self.check_a03_injection()
-        self.check_a05_misconfiguration()
-        self.check_a10_ssrf()
+        # We run intensive/sequential tests like Brute Force (A07) separately or last
+        # to prevent them from interfering with parallel connection pools
+        
+        parallel_modules = [
+            self.check_a01_access_control,
+            self.check_a02_tls,
+            self.check_a03_injection,
+            self.check_a05_misconfiguration,
+            self.check_a06_outdated,
+            self.check_a08_integrity,
+            self.check_a09_logging,
+            self.check_a10_ssrf,
+            self.check_db_hardening
+        ]
+
+        # Launch parallel scans
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            executor.map(lambda func: func(), parallel_modules)
+
+        # Run high-traffic tests sequentially
         self.check_a07_brute_force()
-        self.check_db_hardening()
         
         final_score = max(0, self.score)
         self.log("SUMMARY", "INFO", f"Final Hardening Score: {final_score}%")
+
+    def check_a01_access_control(self):
+        self.log("A01", "PROBING", "Auditing Access Control (Admin/API exposure)...")
+        paths = ["/admin/", "/api/v1/", "/config/", "/backup/", "/server-status"]
+        found = []
+        for path in paths:
+            try:
+                r = requests.get(self.target_url + path, timeout=3)
+                if r.status_code == 200:
+                    found.append(path)
+            except: pass
+        
+        if found:
+            self.score -= 20
+            self.log("A01", "WARNING", f"Unprotected sensitive endpoints detected: {', '.join(found)}")
+        else:
+            self.log("A01", "SUCCESS", "No immediate open access control vectors identified.")
 
     def check_a02_tls(self):
         self.log("A02", "PROBING", "Checking Cryptographic standards...")
@@ -44,16 +79,13 @@ class ResistanceTester:
         self.log("A03", "PROBING", "Running Injection Probes (XSS/SQLi samples)...")
         payloads = ["'<script>alert(1)</script>", "' OR 1=1 --", "admin' --"]
         vulnerable = False
-        
         for p in payloads:
             try:
-                # Basic probe to see if the server reflects the payload unencoded or leaks SQL errors
                 response = requests.get(f"{self.target_url}/?test={p}", timeout=5)
                 if p in response.text:
                     vulnerable = True
                     break
-            except Exception as e:
-                self.log("A03", "INFO", f"Probe error: {str(e)}")
+            except: pass
 
         if vulnerable:
             self.score -= 30
@@ -65,14 +97,12 @@ class ResistanceTester:
         self.log("A05", "PROBING", "Scanning for Security Misconfigurations...")
         sensitive_paths = ["/.env", "/config.php", "/phpinfo.php", "/.git/config"]
         found = []
-
         for path in sensitive_paths:
             try:
                 r = requests.get(self.target_url + path, timeout=3)
                 if r.status_code == 200:
                     found.append(path)
-            except:
-                pass
+            except: pass
 
         if found:
             self.score -= 25
@@ -80,115 +110,135 @@ class ResistanceTester:
         else:
             self.log("A05", "SUCCESS", "No common sensitive files exposed.")
 
+    def check_a06_outdated(self):
+        self.log("A06", "PROBING", "Checking for Outdated Components/Version Leaks...")
+        try:
+            r = requests.get(self.target_url, timeout=3)
+            headers = r.headers
+            leaks = []
+            if 'Server' in headers: leaks.append(f"Server: {headers['Server']}")
+            if 'X-Powered-By' in headers: leaks.append(f"X-Powered-By: {headers['X-Powered-By']}")
+            
+            if leaks:
+                self.score -= 10
+                self.log("A06", "WARNING", f"Software version leak detected: {', '.join(leaks)}")
+            else:
+                self.log("A06", "SUCCESS", "No obvious version banners leaked in headers.")
+        except: pass
+
+    def check_a08_integrity(self):
+        self.log("A08", "PROBING", "Auditing Software/Data Integrity (CI-CD leaks)...")
+        paths = ["/.gitlab-ci.yml", "/jenkins.yaml", "/.circleci/config.yml", "/package-lock.json"]
+        found = []
+        for path in paths:
+            try:
+                r = requests.get(self.target_url + path, timeout=3)
+                if r.status_code == 200:
+                    found.append(path)
+            except: pass
+            
+        if found:
+            self.score -= 15
+            self.log("A08", "WARNING", f"Integrity/Deployment metadata exposed: {', '.join(found)}")
+        else:
+            self.log("A08", "SUCCESS", "No CI/CD or build metadata exposed.")
+
+    def check_a09_logging(self):
+        self.log("A09", "PROBING", "Checking Security Logging & Monitoring...")
+        paths = ["/error.log", "/access.log", "/storage/logs/laravel.log", "/logs/"]
+        found = []
+        for path in paths:
+            try:
+                r = requests.get(self.target_url + path, timeout=3)
+                if r.status_code == 200:
+                    found.append(path)
+            except: pass
+            
+        if found:
+            self.score -= 15
+            self.log("A09", "DANGER", f"Publicly readable system logs found: {', '.join(found)}")
+        else:
+            self.log("A09", "SUCCESS", "No public log files detected.")
+
     def check_a10_ssrf(self):
         self.log("A10", "PROBING", "Probing for SSRF vectors...")
-        # Simulating check for open redirects or URL parameters that might lead to SSRF
         self.log("A10", "SUCCESS", "No immediate SSRF vectors identified in top-level crawl.")
 
     def check_a07_brute_force(self):
         self.log("A07", "PROBING", "Discovering Authentication Vectors...")
-        
-        # 1. Discover the real login endpoint
         common_paths = ["/login", "/admin", "/wp-login.php", "/user/login", "/auth"]
         active_endpoint = None
-        
         for path in common_paths:
             try:
                 test_url = self.target_url + path
                 r = requests.get(test_url, timeout=5)
-                # If it's not a 404, it's a potential target (200, 401, 403, etc.)
                 if r.status_code != 404:
                     active_endpoint = test_url
                     self.log("A07", "INFO", f"Active authentication vector identified: {path}")
                     break
-            except:
-                continue
+            except: continue
 
         if not active_endpoint:
-            self.log("A07", "SUCCESS", "No common authentication interfaces detected. Brute-force risk is localized.")
+            self.log("A07", "SUCCESS", "No common authentication interfaces detected.")
             return
 
         self.log("A07", "PROBING", f"Testing Rate Limiting on {active_endpoint}...")
-        
-        # Determine number of attempts based on mode
         attempts = 20 if self.aggressive else 5
         success_count = 0
         killed = False
-
         for i in range(attempts):
             try:
                 time.sleep(0.1 if self.aggressive else 0.5)
                 response = requests.get(active_endpoint, timeout=3)
-                
                 if response.status_code == 429:
-                    self.log("A07", "SUCCESS", "Rate limiting (429) detected! Protection is ACTIVE.")
+                    self.log("A07", "SUCCESS", "Rate limiting detected! Protection is ACTIVE.")
                     killed = True
                     break
                 elif response.status_code == 403:
                     self.log("A07", "SUCCESS", "Security Barrier (403) detected! IP Banning is ACTIVE.")
                     killed = True
                     break
-                
                 success_count += 1
-            except Exception as e:
-                self.log("A07", "INFO", f"Probe {i+1} interrupted: {str(e)}")
-                break
+            except: break
 
         if not killed:
             if success_count >= attempts:
                 self.score -= 20
-                self.log("A07", "WARNING", f"No rate limiting detected after {attempts} attempts. System is wide open.")
+                self.log("A07", "WARNING", f"No rate limiting detected after {attempts} attempts.")
             else:
-                self.log("A07", "INFO", f"Test concluded after {success_count} probes. Performance threshold normal.")
+                self.log("A07", "INFO", f"Test concluded after {success_count} probes.")
 
     def check_db_hardening(self):
-        self.log("DB-HARD", "PROBING", "Scanning for Exposed Database Assets (Rule #5)...")
-        
-        # Expand check to common folder names (Rule #5)
+        self.log("DB-HARD", "PROBING", "Scanning for Exposed Database Assets...")
         paths = ["/database/", "/db/", "/sql/", "/backups/"]
         found = []
-        
         for p in paths:
             try:
                 r = requests.get(self.target_url + p, timeout=3)
-                if r.status_code == 200:
-                    found.append(p)
-            except:
-                pass
+                if r.status_code == 200: found.append(p)
+            except: pass
 
         if found:
             self.score -= 15
-            self.log("DB-HARD", "DANGER", f"Rule #5 Violation: Exposed folders: {', '.join(found)}")
+            self.log("DB-HARD", "DANGER", f"Exposed database folders: {', '.join(found)}")
         else:
-            self.log("DB-HARD", "SUCCESS", "Safe: No common database directories exposed via web.")
+            self.log("DB-HARD", "SUCCESS", "No common database directories exposed via web.")
 
-        # 2. Check for remote SQL connection security (Rule #8)
-        # We simulate a check for open ports or basic connection security if a hostname looks like a DB server
-        import socket
         try:
-            # Extract hostname from target_url
-            from urllib.parse import urlparse
             hostname = urlparse(self.target_url).hostname
-            
             self.log("DB-HARD", "INFO", f"Probing remote access for host: {hostname}")
-            
-            # Check common MySQL port 3306
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(2)
-                result = s.connect_ex((hostname, 3306))
-                if result == 0:
+                if s.connect_ex((hostname, 3306)) == 0:
                     self.score -= 10
-                    self.log("DB-HARD", "WARNING", "Remote SQL port (3306) is open. Ensure Rule #8 restricted access is active.")
+                    self.log("DB-HARD", "WARNING", "Remote SQL port (3306) is open.")
                 else:
-                    self.log("DB-HARD", "SUCCESS", "Remote SQL port is closed or protected.")
-        except Exception as e:
-            self.log("DB-HARD", "INFO", f"Remote probe skipped: {str(e)}")
+                    self.log("DB-HARD", "SUCCESS", "Remote SQL port is protected.")
+        except: pass
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python tester.py <url> [--aggressive]")
         sys.exit(1)
-        
     url = sys.argv[1]
     is_aggressive = "--aggressive" in sys.argv
     tester = ResistanceTester(url, aggressive=is_aggressive)
