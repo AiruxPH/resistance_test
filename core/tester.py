@@ -3,6 +3,7 @@ import time
 import json
 import sys
 import socket
+import re
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 
@@ -12,6 +13,7 @@ class ResistanceTester:
         self.results = []
         self.score = 100
         self.aggressive = aggressive
+        self.session = requests.Session() # Use session for better state handling
 
     def log(self, module, level, message):
         entry = {
@@ -25,9 +27,6 @@ class ResistanceTester:
         sys.stdout.flush()
 
     def run_all(self):
-        # We run intensive/sequential tests like Brute Force (A07) separately or last
-        # to prevent them from interfering with parallel connection pools
-        
         parallel_modules = [
             self.check_a01_access_control,
             self.check_a02_tls,
@@ -40,30 +39,28 @@ class ResistanceTester:
             self.check_db_hardening
         ]
 
-        # Launch parallel scans
         with ThreadPoolExecutor(max_workers=5) as executor:
             executor.map(lambda func: func(), parallel_modules)
 
-        # Run high-traffic tests sequentially
         self.check_a07_brute_force()
         
         final_score = max(0, self.score)
         self.log("SUMMARY", "INFO", f"Final Hardening Score: {final_score}%")
 
     def check_a01_access_control(self):
-        self.log("A01", "PROBING", "Auditing Access Control (Admin/API exposure)...")
+        self.log("A01", "PROBING", "Auditing Access Control...")
         paths = ["/admin/", "/api/v1/", "/config/", "/backup/", "/server-status"]
         found = []
         for path in paths:
             try:
-                r = requests.get(self.target_url + path, timeout=3)
+                r = self.session.get(self.target_url + path, timeout=3)
                 if r.status_code == 200:
                     found.append(path)
             except: pass
         
         if found:
             self.score -= 20
-            self.log("A01", "WARNING", f"Unprotected sensitive endpoints detected: {', '.join(found)}")
+            self.log("A01", "WARNING", f"Unprotected sensitive endpoints: {', '.join(found)}")
         else:
             self.log("A01", "SUCCESS", "No immediate open access control vectors identified.")
 
@@ -71,27 +68,82 @@ class ResistanceTester:
         self.log("A02", "PROBING", "Checking Cryptographic standards...")
         if not self.target_url.startswith("https"):
             self.score -= 20
-            self.log("A02", "WARNING", "Site is not using HTTPS. Cryptographic Failure risk is high.")
+            self.log("A02", "WARNING", "Site is not using HTTPS.")
         else:
             self.log("A02", "SUCCESS", "HTTPS detected.")
 
     def check_a03_injection(self):
-        self.log("A03", "PROBING", "Running Injection Probes (XSS/SQLi samples)...")
-        payloads = ["'<script>alert(1)</script>", "' OR 1=1 --", "admin' --"]
-        vulnerable = False
-        for p in payloads:
+        self.log("A03", "PROBING", "Running Advanced Injection Probes (GET/POST)...")
+        
+        # SQLi Payloads
+        sqli_payloads = ["' OR 1=1 --", '" OR 1=1 --', "admin' --", "admin' #", "' OR '1'='1"]
+        xss_payloads = ["<script>alert(1)</script>", "javascript:alert(1)"]
+        
+        is_vulnerable = False
+        
+        # 1. Passive Form & CSRF Discovery
+        login_url = self.target_url
+        csrf_token = None
+        form_action = None
+        try:
+            r_main = self.session.get(self.target_url, timeout=5)
+            # Find CSRF token (hidden input)
+            csrf_match = re.search(r'name="csrf"\s+value="(.*?)"', r_main.text, re.I)
+            if csrf_match:
+                csrf_token = csrf_match.group(1)
+                self.log("A03", "INFO", "Detected CSRF token. Including in security probes.")
+            
+            # Find Form Action
+            action_match = re.search(r'<form.*?action="(.*?)"', r_main.text, re.I | re.S)
+            if action_match:
+                form_action = action_match.group(1)
+                if form_action.startswith('/'):
+                    parsed = urlparse(self.target_url)
+                    login_url = f"{parsed.scheme}://{parsed.netloc}{form_action}"
+        except: pass
+
+        # 2. Active POST Probing (Auth Bypass Simulation)
+        common_fields = ['username', 'user', 'login', 'email', 'password', 'pass']
+        
+        for payload in sqli_payloads:
             try:
-                response = requests.get(f"{self.target_url}/?test={p}", timeout=5)
-                if p in response.text:
-                    vulnerable = True
+                # Construct payload data
+                data = {field: payload for field in common_fields}
+                if csrf_token:
+                    data['csrf'] = csrf_token
+                
+                # Check for redirect (302) or specific successful login indicators
+                r = self.session.post(login_url, data=data, timeout=5, allow_redirects=False)
+                
+                # Indicators of successful SQLi bypass:
+                if r.status_code == 302:
+                    is_vulnerable = True
+                    self.log("A03", "DANGER", f"Authentication Bypass detected via payload: {payload}")
+                    break
+                
+                # Check for SQL Error leaking
+                sql_errors = ["sql syntax", "mysql_fetch", "sqlite3", "postgresql", "driver", "ora-", "dynamic sql"]
+                if any(err in r.text.lower() for err in sql_errors):
+                    is_vulnerable = True
+                    self.log("A03", "DANGER", "Database error leakage detected. Injection is likely active.")
                     break
             except: pass
 
-        if vulnerable:
+        # 3. Traditional GET Reflection (for XSS/SQLi)
+        if not is_vulnerable:
+            for p in xss_payloads + sqli_payloads:
+                try:
+                    r = self.session.get(f"{self.target_url}/?id={p}", timeout=5)
+                    if p in r.text:
+                        is_vulnerable = True
+                        self.log("A03", "WARNING", f"Input reflection detected: {p}")
+                        break
+                except: pass
+
+        if is_vulnerable:
             self.score -= 30
-            self.log("A03", "WARNING", "Potential Reflection/Injection detected. Input is not sufficiently neutralized.")
         else:
-            self.log("A03", "SUCCESS", "Basic injection probes did not reveal immediate vulnerabilities.")
+            self.log("A03", "SUCCESS", "No immediate injection vulnerabilities detected.")
 
     def check_a05_misconfiguration(self):
         self.log("A05", "PROBING", "Scanning for Security Misconfigurations...")
@@ -99,21 +151,21 @@ class ResistanceTester:
         found = []
         for path in sensitive_paths:
             try:
-                r = requests.get(self.target_url + path, timeout=3)
+                r = self.session.get(self.target_url + path, timeout=3)
                 if r.status_code == 200:
                     found.append(path)
             except: pass
 
         if found:
             self.score -= 25
-            self.log("A05", "DANGER", f"Exposed sensitive files found: {', '.join(found)}")
+            self.log("A05", "DANGER", f"Exposed sensitive files: {', '.join(found)}")
         else:
             self.log("A05", "SUCCESS", "No common sensitive files exposed.")
 
     def check_a06_outdated(self):
-        self.log("A06", "PROBING", "Checking for Outdated Components/Version Leaks...")
+        self.log("A06", "PROBING", "Checking for Version Leaks...")
         try:
-            r = requests.get(self.target_url, timeout=3)
+            r = self.session.get(self.target_url, timeout=3)
             headers = r.headers
             leaks = []
             if 'Server' in headers: leaks.append(f"Server: {headers['Server']}")
@@ -121,48 +173,48 @@ class ResistanceTester:
             
             if leaks:
                 self.score -= 10
-                self.log("A06", "WARNING", f"Software version leak detected: {', '.join(leaks)}")
+                self.log("A06", "WARNING", f"Software version leak: {', '.join(leaks)}")
             else:
-                self.log("A06", "SUCCESS", "No obvious version banners leaked in headers.")
+                self.log("A06", "SUCCESS", "No significant header leaks.")
         except: pass
 
     def check_a08_integrity(self):
-        self.log("A08", "PROBING", "Auditing Software/Data Integrity (CI-CD leaks)...")
+        self.log("A08", "PROBING", "Auditing Integrity (CI-CD leaks)...")
         paths = ["/.gitlab-ci.yml", "/jenkins.yaml", "/.circleci/config.yml", "/package-lock.json"]
         found = []
         for path in paths:
             try:
-                r = requests.get(self.target_url + path, timeout=3)
+                r = self.session.get(self.target_url + path, timeout=3)
                 if r.status_code == 200:
                     found.append(path)
             except: pass
             
         if found:
             self.score -= 15
-            self.log("A08", "WARNING", f"Integrity/Deployment metadata exposed: {', '.join(found)}")
+            self.log("A08", "WARNING", f"Build metadata exposed: {', '.join(found)}")
         else:
-            self.log("A08", "SUCCESS", "No CI/CD or build metadata exposed.")
+            self.log("A08", "SUCCESS", "No CI/CD metadata exposed.")
 
     def check_a09_logging(self):
-        self.log("A09", "PROBING", "Checking Security Logging & Monitoring...")
+        self.log("A09", "PROBING", "Checking Security Logging...")
         paths = ["/error.log", "/access.log", "/storage/logs/laravel.log", "/logs/"]
         found = []
         for path in paths:
             try:
-                r = requests.get(self.target_url + path, timeout=3)
+                r = self.session.get(self.target_url + path, timeout=3)
                 if r.status_code == 200:
                     found.append(path)
             except: pass
             
         if found:
             self.score -= 15
-            self.log("A09", "DANGER", f"Publicly readable system logs found: {', '.join(found)}")
+            self.log("A09", "DANGER", f"Readable logs found: {', '.join(found)}")
         else:
             self.log("A09", "SUCCESS", "No public log files detected.")
 
     def check_a10_ssrf(self):
         self.log("A10", "PROBING", "Probing for SSRF vectors...")
-        self.log("A10", "SUCCESS", "No immediate SSRF vectors identified in top-level crawl.")
+        self.log("A10", "SUCCESS", "No immediate SSRF vectors identified.")
 
     def check_a07_brute_force(self):
         self.log("A07", "PROBING", "Discovering Authentication Vectors...")
@@ -171,15 +223,15 @@ class ResistanceTester:
         for path in common_paths:
             try:
                 test_url = self.target_url + path
-                r = requests.get(test_url, timeout=5)
+                r = self.session.get(test_url, timeout=5)
                 if r.status_code != 404:
                     active_endpoint = test_url
-                    self.log("A07", "INFO", f"Active authentication vector identified: {path}")
+                    self.log("A07", "INFO", f"Active auth vector: {path}")
                     break
             except: continue
 
         if not active_endpoint:
-            self.log("A07", "SUCCESS", "No common authentication interfaces detected.")
+            self.log("A07", "SUCCESS", "No common login interfaces detected.")
             return
 
         self.log("A07", "PROBING", f"Testing Rate Limiting on {active_endpoint}...")
@@ -189,13 +241,14 @@ class ResistanceTester:
         for i in range(attempts):
             try:
                 time.sleep(0.1 if self.aggressive else 0.5)
-                response = requests.get(active_endpoint, timeout=3)
+                # Ensure we use the session to preserve cookies/state
+                response = self.session.get(active_endpoint, timeout=3)
                 if response.status_code == 429:
-                    self.log("A07", "SUCCESS", "Rate limiting detected! Protection is ACTIVE.")
+                    self.log("A07", "SUCCESS", "Rate limiting active (429).")
                     killed = True
                     break
                 elif response.status_code == 403:
-                    self.log("A07", "SUCCESS", "Security Barrier (403) detected! IP Banning is ACTIVE.")
+                    self.log("A07", "SUCCESS", "Security Barrier active (403).")
                     killed = True
                     break
                 success_count += 1
@@ -204,29 +257,28 @@ class ResistanceTester:
         if not killed:
             if success_count >= attempts:
                 self.score -= 20
-                self.log("A07", "WARNING", f"No rate limiting detected after {attempts} attempts.")
+                self.log("A07", "WARNING", f"No rate limiting after {attempts} attempts.")
             else:
                 self.log("A07", "INFO", f"Test concluded after {success_count} probes.")
 
     def check_db_hardening(self):
-        self.log("DB-HARD", "PROBING", "Scanning for Exposed Database Assets...")
+        self.log("DB-HARD", "PROBING", "Scanning for Database Assets...")
         paths = ["/database/", "/db/", "/sql/", "/backups/"]
         found = []
         for p in paths:
             try:
-                r = requests.get(self.target_url + p, timeout=3)
+                r = self.session.get(self.target_url + p, timeout=3)
                 if r.status_code == 200: found.append(p)
             except: pass
 
         if found:
             self.score -= 15
-            self.log("DB-HARD", "DANGER", f"Exposed database folders: {', '.join(found)}")
+            self.log("DB-HARD", "DANGER", f"Exposed DB folders: {', '.join(found)}")
         else:
-            self.log("DB-HARD", "SUCCESS", "No common database directories exposed via web.")
+            self.log("DB-HARD", "SUCCESS", "No common DB directories exposed.")
 
         try:
             hostname = urlparse(self.target_url).hostname
-            self.log("DB-HARD", "INFO", f"Probing remote access for host: {hostname}")
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(2)
                 if s.connect_ex((hostname, 3306)) == 0:
